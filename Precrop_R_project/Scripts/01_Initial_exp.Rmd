@@ -1,0 +1,503 @@
+---
+title: "Analysis initial observation <br> *Role of benzoxazinoids in crop rotation tolerance*"
+author: "Valentin Gfeller"
+date: "`r Sys.Date()`"
+output: 
+  html_document: 
+    toc: true
+    toc_float: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+#global knitter option
+knitr::opts_chunk$set(fig.align = "center", dev = 'svglite', echo = FALSE)
+
+#Load packages
+library(tidyverse); packageVersion("tidyverse")
+library(emmeans); packageVersion("emmeans")
+library(nlme); packageVersion("nlme")
+library(car); packageVersion("car")
+library(here); packageVersion("here")
+library(ggbeeswarm); packageVersion("ggbeeswarm")
+library(knitr); packageVersion("knitr")
+library(ggtext); packageVersion("ggtext")
+library(geomtextpath); packageVersion("geomtextpath") 
+
+
+# set global ggplot2 options
+theme_set(theme_bw(base_size = 11))
+
+# load handy functions
+source(here("Scripts", "functions.R"))
+
+# Save the state of the project library to the lockfile (called renv.lock)
+# renv::snapshot()
+
+```
+
+```{r include=FALSE}
+# set graphical appearance of plots
+x_labs <- c("Triticum_aestivum"      = "Triticum aestivum",
+            "Phacelia_tanacetifolia" = "Phacelia tanacetifolia",
+            "Brassica_napus"         = "Brassica napus",
+            "Glycine_max"            = "Glycine max",
+            "Medicago_sativa"        = "Medicago sativa")
+fill_values <- c(w = "darkgoldenrod1", 
+                 b = "darkolivegreen4")
+fill_labels <- c(w = "WT (B73)", 
+                 b = expression(italic("bx1") ~ "(B73)"))
+```
+
+# Precrops
+```{r, include=FALSE}
+d.precrop <- read_delim(here("Data", "Phenotypes_precrops_1.csv"),
+                             delim = ",", col_names = TRUE) %>%
+      mutate(pre_crop_long = factor(pre_crop_long, 
+                                levels = c("Triticum_aestivum",
+                                           "Phacelia_tanacetifolia",
+                                           "Brassica_napus", "Glycine_max",
+                                           "Medicago_sativa")))
+str(d.precrop)
+```
+
+## Dry weight - Fig.S2a
+```{r, include=FALSE}
+# statistics
+ # lm --> anova
+mod.pre <- lm(dw_precrop ~ pre_crop_long, data = d.precrop)
+
+Anova(mod.pre)
+summary(mod.pre)
+plot.mod.vg(mod.pre)
+
+ # gls --> anova
+d.precrop_red <- d.precrop %>% drop_na(dw_precrop)
+
+m.pre_null <-  gls(dw_precrop ~ pre_crop_long, data = d.precrop_red)
+m.pre.gls <-  gls(dw_precrop ~ pre_crop_long, data = d.precrop_red,
+                 weights = varIdent(form = ~ 1 | pre_crop_long))
+anova(m.pre.gls, m.pre_null) # --> gls
+
+plot(m.pre.gls)
+qqnorm(m.pre.gls, abline = c(0,1))
+Anova(m.pre.gls) 
+
+# extract anova table
+t.anova_pre <- create_anova_table(m.pre.gls)
+lab_anova_pre <- paste0("**ANOVA (GLS)**<Br> Precrop: p < 0.001")
+
+
+# calculate differences between precrops
+t.mult_pre <- multcomp::cld(emmeans(m.pre.gls, ~ pre_crop_long),
+                            Letters = letters, adjust = "fdr") %>% as.data.frame()
+
+t.pos_cld_ <- d.precrop %>%
+  group_by(pre_crop_long) %>% 
+  summarise(pos_cld = max(dw_precrop) + 0.6)
+
+t.cld <- left_join(t.mult_pre, t.pos_cld_)
+  
+```
+
+```{r, echo=FALSE}
+t.anova_pre %>% kable(digits = 3, caption = "ANOVA precrop")
+t.cld %>% select(-pos_cld) %>% kable(digits = 3, caption = "Pairwise comparison precrops")
+
+```
+
+```{r precrop, fig.height = 5.75, fig.width = 6}
+p.pre <- d.precrop  %>%
+      ggplot(aes(x = pre_crop_long, y = dw_precrop)) + 
+      geom_boxplot(color = "darkgray", fill = "grey", outlier.colour = NA,
+                   alpha = 0.3) +
+      geom_quasirandom(data = d.precrop,
+                       aes(x = pre_crop_long, y = dw_precrop), 
+                       size = 2, shape = 21, width = 0.15, 
+                       show.legend = FALSE, alpha = 0.8) +
+      stat_summary(fun = mean, geom = "point", shape = 18, size = 3) +
+      stat_summary(fun.data = mean_se, geom = "errorbar", linewidth = 1, 
+               color = "black", width = 0.4) +
+      xlab("Precrop") + 
+      ylab("Dry weight (g)") +
+      geom_text(data = t.cld, aes(x = pre_crop_long, y = pos_cld, 
+                              label = trimws(.group)), size = 5) +
+      scale_y_continuous(breaks = c(seq(0, 14, by = 2)), 
+                         expand = expansion(mult = c(0.05, 0.1))) +
+      scale_x_discrete(labels = x_labs, guide = guide_axis(n.dodge = 2)) +
+      theme(axis.text.x = element_text(face = "italic"),
+            plot.margin = margin(t = 3, r = 4, b = 3, l = 3, unit = "pt")) +
+      geom_richtext(aes(x = -Inf, y = Inf, label = lab_anova_pre),
+                    stat = "unique",
+                    fill = "white", label.color = "white",
+                    label.padding = grid::unit(c(0.5, 0.5, 0.5, 0.75), "lines"),
+                    hjust = 0, vjust = 1.0, size = 3,
+                    label.r = unit(0, "lines")) 
+
+p.pre 
+
+
+ggsave(p.pre, filename = here("Results", "Fig.S2a_Phenotypes_precrops_1.svg"),  
+       height = 10, width = 11, units = "cm")
+
+
+d.precrop %>% 
+  group_by(pre_crop) %>% 
+  summarise(
+    Mean_dw = mean(dw_precrop, na.rm = TRUE),
+    n = sum(!is.na(dw_precrop)))
+```
+
+# WT vs. *bx1*
+```{r, include=FALSE}
+d.phen_maize <- read_delim(here("Data", "Phenotypes_maize_1.csv"),
+                             delim = ",", col_names = TRUE) %>%
+  mutate(trt = factor(trt, levels = c("w", "b"))) %>%               # set levels
+  mutate(pre_crop_long = factor(pre_crop_long,
+                                levels = c("Triticum_aestivum", 
+                                           "Phacelia_tanacetifolia",
+                                           "Brassica_napus", "Glycine_max",
+                                           "Medicago_sativa")))
+
+str(d.phen_maize)
+slice_sample(d.phen_maize, n = 5)
+```
+
+## Height - Fig.S2b
+```{r warning=FALSE, include=FALSE, out.width="100%"}
+# statistics
+ # lm --> anova
+mod.hei <- lm(height_harvest ~ trt * pre_crop_long, data = d.phen_maize)
+
+Anova(mod.hei)
+summary(mod.hei)
+plot.mod.vg(mod.hei)
+
+ # gls --> anova
+d.phen_maize_red <- d.phen_maize %>% drop_na(height_harvest)
+
+m.hei_null <-  gls(height_harvest ~ trt * pre_crop_long, data = d.phen_maize_red)
+m.hei.gls <-  gls(height_harvest ~ trt * pre_crop_long, data = d.phen_maize_red,
+                 weights = varIdent(form = ~ 1 | trt * pre_crop_long))
+anova(m.hei.gls, m.hei_null) # --> lm
+
+plot(m.hei.gls)
+qqnorm(m.hei.gls, abline = c(0,1))
+Anova(m.hei.gls) 
+
+# extract anova table
+t.anova_hei <- create_anova_table(mod.hei)
+lab_anova_hei <- create_anova_label(mod.hei)
+
+
+ # test genotype effect for each precrop species (emmeans)
+plot_max <- d.phen_maize$height_harvest %>% max(na.rm = TRUE)
+tab.emm_hei <- emmeans(mod.hei, specs = pairwise ~ trt | pre_crop_long) %>% 
+  .$contrasts %>%
+     rbind(adjust = "fdr") %>% 
+     summary(infer = TRUE) %>% tibble() %>% 
+     mutate(max.y = plot_max * 1.02,
+            trt = NA) %>%  print()
+
+p.hei <- d.phen_maize %>% 
+  ggplot_precrop(x = pre_crop_long, y = height_harvest, fill = trt,
+                 tab.emm = tab.emm_hei, lab.anova = lab_anova_hei) +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.03)))  +
+  ylab("Maize height (cm)") 
+
+ggsave(p.hei, filename = here("Results", "Fig.S2b_Phenotypes_maize_height_1.svg"),  height = 10, width = 16, units = "cm")
+
+
+d.phen_maize %>% 
+  group_by(pre_crop_long, trt) %>% 
+  summarise(
+    Mean = mean(height_harvest, na.rm = TRUE),
+    n = sum(!is.na(height_harvest)))
+
+```
+
+```{r warning=FALSE}
+p.hei
+t.anova_hei %>% kable(digits = 3, caption = "ANOVA height")
+tab.emm_hei %>% select(-c(max.y, trt)) %>% kable(digits = 3,
+                                                 caption = "EMMEANS height")
+
+```
+
+## Dry weight - Fig.1a
+```{r warning=FALSE, include=FALSE, out.width="100%"}
+# statistics
+ # lm --> anova
+mod.dw <- lm(dw_harvest ~ trt * pre_crop_long, data = d.phen_maize)
+
+Anova(mod.dw)
+summary(mod.dw)
+plot.mod.vg(mod.dw)
+
+ # gls --> anova
+d.phen_maize_red <- d.phen_maize %>% drop_na(dw_harvest)
+
+m.dw_null <-  gls(dw_harvest ~ trt * pre_crop_long, data = d.phen_maize_red)
+m.dw.gls <-  gls(dw_harvest ~ trt * pre_crop_long, data = d.phen_maize_red,
+                 weights = varIdent(form = ~ 1 | trt * pre_crop_long))
+anova(m.dw.gls, m.dw_null) # --> gls
+
+plot(m.dw.gls)
+qqnorm(m.dw.gls, abline = c(0,1))
+Anova(m.dw.gls) 
+
+# extract anova table
+t.anova_dw <- create_anova_table(m.dw.gls)
+lab_anova_dw <- create_anova_label(m.dw.gls)
+
+
+ # test genotype effect for each precrop species (emmeans)
+plot_max <- d.phen_maize$dw_harvest %>% max(na.rm = TRUE)
+tab.emm_dw <- emmeans(m.dw.gls, specs = pairwise ~ trt | pre_crop_long) %>% 
+  .$contrasts %>%
+     rbind(adjust = "fdr") %>% 
+     summary(infer = TRUE) %>% tibble() %>% 
+     mutate(max.y = plot_max * 1.04,
+            trt = NA) %>%  print()
+
+p.dw <- d.phen_maize %>% 
+  ggplot_precrop(x = pre_crop_long, y = dw_harvest, fill = trt,
+                 tab.emm = tab.emm_dw, lab.anova = lab_anova_dw) +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.05)))  +
+  ylab("Maize dry weight (g)") 
+
+# Add overall mean
+o_mean <- mean(d.phen_maize$dw_harvest, na.rm = TRUE)
+p.dw <- p.dw +
+  geom_texthline(yintercept = o_mean, label = "Overall mean", 
+                 linetype = 2, color = "gray30", hjust = 0.9)
+
+ggsave(p.dw, filename = here("Results", "Fig.1a_Phenotypes_maize_dw_1.svg"),  height = 14, width = 14, units = "cm")
+
+
+
+t.phen <- d.phen_maize %>% 
+  group_by(pre_crop_long, trt) %>% 
+  summarise(
+    Mean_dw = mean(dw_harvest, na.rm = TRUE),
+    n = sum(!is.na(dw_harvest))) %>% ungroup()
+
+
+# increase in biomass for Triticum aestivum WT relative to bx1 mutant
+Tri_dw_w <- t.phen %>% filter(pre_crop_long == "Triticum_aestivum" & 
+                                trt == "w") %>% pull(Mean_dw)
+Tri_dw_b <- t.phen %>% filter(pre_crop_long == "Triticum_aestivum" & 
+                                trt == "b") %>% pull(Mean_dw)
+
+Tri_dw_w/Tri_dw_b
+
+```
+
+```{r warning=FALSE}
+p.dw
+t.anova_dw %>% kable(digits = 3, caption = "ANOVA dry weight")
+tab.emm_dw %>% select(-c(max.y, trt)) %>% kable(digits = 3, 
+                                                caption = "EMMEANS dry weight")
+
+```
+
+Also look at overall means and test if individual precrops perform significantly better or worse than the overall mean.
+```{r warning=FALSE, include=FALSE}
+# Overall mean
+o_mean <- mean(d.phen_maize$dw_harvest, na.rm = TRUE)
+
+# One sample tests
+d.phen_maize %>% pull(pre_crop) %>% unique()
+d.phen_maize %>% pull(pre_crop_long) %>% unique()
+
+## Triticum aestivum
+d.phen_maize_tri <- d.phen_maize %>% 
+  filter(pre_crop == "Tri") 
+qqnorm(d.phen_maize_tri$dw_harvest)
+t.tri <- t.test(d.phen_maize_tri$dw_harvest, mu = o_mean,
+                alternative = "two.sided"); t.tri
+wilcox.test(d.phen_maize_tri$dw_harvest, mu = o_mean, alternative = "two.sided")
+
+## Phacelia_tanacetifolia
+d.phen_maize_Pha <- d.phen_maize %>% 
+  filter(pre_crop == "Pha") 
+qqnorm(d.phen_maize_Pha$dw_harvest)
+t.pha <- t.test(d.phen_maize_Pha$dw_harvest, mu = o_mean, 
+                alternative = "two.sided"); t.pha
+wilcox.test(d.phen_maize_Pha$dw_harvest, mu = o_mean, alternative = "two.sided")
+
+## Brassica napus
+d.phen_maize_Bra <- d.phen_maize %>% 
+  filter(pre_crop == "Bra") 
+qqnorm(d.phen_maize_Bra$dw_harvest)
+t.bra <- t.test(d.phen_maize_Bra$dw_harvest, mu = o_mean, 
+                alternative = "two.sided"); t.bra
+wilcox.test(d.phen_maize_Bra$dw_harvest, mu = o_mean, alternative = "two.sided")
+
+## Glycine max
+d.phen_maize_Gly <- d.phen_maize %>% 
+  filter(pre_crop == "Gly") 
+qqnorm(d.phen_maize_Gly$dw_harvest)
+t.gly <- t.test(d.phen_maize_Gly$dw_harvest, mu = o_mean,
+                alternative = "two.sided"); t.gly
+wilcox.test(d.phen_maize_Gly$dw_harvest, mu = o_mean, alternative = "two.sided")
+
+## Medicago sativa
+d.phen_maize_Med <- d.phen_maize %>% 
+  filter(pre_crop == "Med") 
+qqnorm(d.phen_maize_Med$dw_harvest)
+t.med <- t.test(d.phen_maize_Med$dw_harvest, mu = o_mean, 
+                alternative = "two.sided"); t.med
+wilcox.test(d.phen_maize_Med$dw_harvest, mu = o_mean, alternative = "two.sided")
+
+## correct for multiple testing
+t.all <- c(t.tri$p.value, t.pha$p.value, t.bra$p.value, t.gly$p.value, t.med$p.value)
+p.adjust(t.all, method = "fdr")
+# all p values are below 0.001
+```
+
+```{r echo=TRUE}
+# Overall mean
+o_mean
+
+#Triticum
+t.tri
+
+#Phacelia
+t.pha
+
+# Brassica
+t.bra
+
+# Glycine
+t.gly
+
+#Medicago
+t.med
+```
+
+# Soil BXs after maize growth - Fig.1b
+```{r include=FALSE}
+# load data
+d.chem_comb <- read_delim(here("Data", "BX_maize_1.csv"),
+                             delim = ",", col_names = TRUE) %>% 
+  mutate(pre_crop_long = factor(pre_crop_long, 
+                                    levels = c(
+                                      "Triticum_aestivum",
+                                      "Phacelia_tanacetifolia",
+                                      "Brassica_napus",
+                                      "Glycine_max",
+                                      "Medicago_sativa")),
+         compound = factor(compound, 
+                           levels = c("HDMBOA-Glc", "DIMBOA",
+                                      "HMBOA", "MBOA", "AMPO")),
+         trt = factor(trt, levels = c("w", "b")))
+
+
+# set graphical appearance of plots
+shape_labels <- x_labs
+shape_values <- c(15:17, 4, 12)
+x_labs <- c(w = "WT",
+            b = expression(italic("bx1")))
+
+```
+
+```{r warning=FALSE, include=FALSE, out.width="100%"}
+# test for differences between genotypes by Wilcoxon Rank Sum test and correct for multiple testing
+p_values <- d.chem_comb %>% 
+  mutate(conc = case_when(
+    is.na(conc) ~ 0,
+    TRUE ~ conc)) %>%
+  group_by(compound) %>% 
+  nest() %>% 
+  mutate( fit = map(data, ~ wilcox.test(conc ~ trt, data = ., exact = FALSE)),
+          results = map(fit, broom::glance)) %>% 
+  unnest(results)%>% 
+  select(1, 5)%>%
+  ungroup() %>% 
+  mutate(
+    n      = length(.$p.value),
+    p.ad   = p.adjust(p.value, method = "fdr"),
+    p.ad_c = case_when(
+      p.ad < 0.001 ~ as.character("p < 0.001"),
+      TRUE  ~ paste0("p = ", sprintf("%.3f", p.ad))),
+    x      = 1.5,
+    y      = Inf)
+
+# check above below LOD
+t.lod <- d.chem_comb %>% 
+  mutate(conc = case_when(
+    is.na(conc) ~ 0,
+    TRUE ~ conc)) %>%
+  group_by(compound, trt) %>%
+  summarise(
+    n        = n(),
+    Below_LOD = sum(conc == 0, na.rm = TRUE),
+    .groups = "drop") %>%
+  kable(caption = "Count values below limit of detection")
+
+# use information for plot
+d.lod <- tibble(
+  label = c("LOD"),
+  compound = c("DIMBOA"),
+  trt = "b",
+  y = 0) %>% 
+  mutate(compound = factor(compound, 
+                           levels = c("HDMBOA-Glc","HMBOA-Glc", "DIMBOA",
+                                      "HMBOA", "MBOA", "AMPO")))
+
+
+# plot
+p.pre_gen <- d.chem_comb %>% 
+  mutate(conc = case_when(
+    is.na(conc) ~ 0,
+    TRUE ~ conc)) %>% 
+  ggplot(aes(x = trt, y = conc, fill = trt)) +
+    geom_boxplot(position = position_dodge(width = 0.85), alpha = 0.4,
+                 color = "grey35", outlier.colour = NA) + 
+    geom_quasirandom(dodge.width = 0, size = 2,
+                     width = 0.2, alpha = 0.7, color = "black") +
+    stat_summary(fun = mean, geom = "point",
+                 shape = 18, size = 2.75,
+                 position = position_dodge(width = 0.85),
+                 show.legend = FALSE) +
+    stat_summary(fun.data = mean_se, geom = "errorbar",
+                 linewidth = 1, width = 0.4,
+                 position = position_dodge(width = 0.85))+ 
+    scale_fill_manual(name = "Genotype", 
+                      labels = fill_labels, 
+                      values = fill_values) + 
+    scale_x_discrete("Genotype", labels = x_labs) +
+    theme(axis.text.x = element_text(face = "italic"),
+          plot.margin = margin(t = 3, r = 10, b = 3, l = 3, unit = "pt")) +
+  ylab("Concentration (ng/ml)") +
+  facet_wrap(vars(compound), scales = "free_y") +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.2))) + 
+  geom_text(data = p_values,
+            mapping = aes(x = x, y = y, label = p.ad_c, fill = NULL),
+            vjust = 2,size = 4) +
+  geom_text(data = d.lod,
+            mapping = aes(x = trt, y = y, label = label, fill = NULL),
+            vjust = -1, size = 4) +
+  theme(legend.position = "none")
+
+p.pre_gen
+
+ggsave(p.pre_gen, filename = here("Results", "Fig.1b_BX_maize_init.svg"), 
+       height = 13.6, width = 12, units = "cm")
+
+
+d.chem_comb %>% 
+  group_by(compound, trt) %>% 
+  summarise(
+    Mean_dw = mean(conc, na.rm = TRUE),
+    n = n())
+
+
+```
+
+```{r}
+p.pre_gen
+```
+

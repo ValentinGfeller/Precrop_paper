@@ -1,0 +1,30 @@
+{
+    "id": "E78D1B73",
+    "path": "C:/Users/valug/Dropbox/PhD/Writing/04_Precrops/Precrop_R_project/Scripts/03_Experiment_1.Rmd",
+    "project_path": "Scripts/03_Experiment_1.Rmd",
+    "type": "r_markdown",
+    "hash": "519425740",
+    "contents": "",
+    "dirty": false,
+    "created": 1660726875007.0,
+    "source_on_save": false,
+    "relative_order": 3,
+    "properties": {
+        "chunk_output_type": "console",
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "11,0",
+        "scrollLine": "0",
+        "docOutlineVisible": "1",
+        "rmdVisualCollapsedChunks": "",
+        "docOutlineSize": "123"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1688204421,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1688204421625,
+    "read_only": false,
+    "read_only_alternatives": []
+}
